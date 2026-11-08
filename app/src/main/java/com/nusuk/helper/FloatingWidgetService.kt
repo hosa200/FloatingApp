@@ -10,7 +10,6 @@ import android.view.*
 import android.widget.Button
 import android.widget.TextView
 import kotlinx.coroutines.*
-import kotlin.math.abs
 
 class FloatingWidgetService : Service() {
 
@@ -24,6 +23,15 @@ class FloatingWidgetService : Service() {
     private var isPlaying = false
     private var loopJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+
+    // 4 door relative coordinates on screen (x_ratio, y_ratio)
+    private val doors = listOf(
+        Pair(0.27f, 0.366f),
+        Pair(0.72f, 0.366f),
+        Pair(0.27f, 0.616f),
+        Pair(0.72f, 0.616f)
+    )
+    private var doorIndex = 0
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -97,10 +105,10 @@ class FloatingWidgetService : Service() {
 
         btnRefill.setOnClickListener {
             scope.launch {
-                tvStatus.text = "جارِ جلب رمز المفتاح..."
+                tvStatus.text = "جارِ شحن المفاتيح..."
                 val code = DoorKeyRefill.fetchNextCode()
                 if (code != null) {
-                    tvStatus.text = "الرمز: $code"
+                    tvStatus.text = "تم جلب الرمز: $code"
                 } else {
                     tvStatus.text = "فشل جلب الرمز"
                 }
@@ -129,30 +137,81 @@ class FloatingWidgetService : Service() {
         val prefs = getSharedPreferences("nusuk_prefs", Context.MODE_PRIVATE)
         val apiKey = prefs.getString("gemini_api_key", "") ?: ""
 
+        val dm = resources.displayMetrics
+        val screenW = dm.widthPixels.toFloat()
+        val screenH = dm.heightPixels.toFloat()
+
         loopJob = scope.launch(Dispatchers.Default) {
             while (isActive && isPlaying) {
-                delay(1200)
+                delay(1000)
                 try {
-                    val nodes = NusukAccessibilityService.instance?.findTextNodes() ?: emptyList()
+                    val service = NusukAccessibilityService.instance ?: continue
+                    val nodes = service.findTextNodes()
                     val allTexts = nodes.map { it.text.toString().trim() }
+                    val fullScreenText = allTexts.joinToString(" ")
 
-                    // Check for Mubarak / play again screen
-                    val playAgainNode = nodes.find {
-                        val t = it.text?.toString() ?: ""
-                        t.contains("العب مرة أخرى") || t.contains("ابدأ") || t.contains("مبارك")
+                    // 1. Check for Result / Mubarak screen
+                    val isResultScreen = allTexts.any {
+                        it.contains("مبارك") || it.contains("العب مرة أخرى") || it.contains("إجابة صحيحة") || it.contains("خيرها في غيرها")
                     }
-                    if (playAgainNode != null) {
-                        withContext(Dispatchers.Main) { tvStatus.text = "فتح باب جديد..." }
-                        NusukAccessibilityService.instance?.clickNode(playAgainNode)
-                        delay(2000)
+                    if (isResultScreen) {
+                        withContext(Dispatchers.Main) { tvStatus.text = "الضغط على العب مرة أخرى..." }
+                        val playAgainNode = nodes.find {
+                            val t = it.text?.toString() ?: ""
+                            t.contains("العب مرة أخرى") || t.contains("العب") || t.contains("متابعة")
+                        }
+                        if (playAgainNode != null) {
+                            service.clickNode(playAgainNode)
+                        }
+                        // Also tap coordinates fallback for "العب مرة أخرى" (y = 0.858 * height)
+                        service.tapCoordinate(screenW * 0.50f, screenH * 0.858f)
+                        delay(1500)
                         continue
                     }
 
-                    // Detect question and 4 options
-                    // Nusuk usually displays options with clickable containers or text nodes
+                    // 2. Check for Doors Selection screen ("اختر الباب", "الأبواب", etc.)
+                    val isDoorsScreen = allTexts.any {
+                        it.contains("اختر الباب") || it.contains("الأبواب") || it.contains("ابدأ التحدي") || it.contains("افتح الباب")
+                    }
+                    if (isDoorsScreen) {
+                        // Check if "افتح الباب" popup is already visible
+                        val openDoorBtn = nodes.find {
+                            val t = it.text?.toString() ?: ""
+                            t.contains("افتح الباب") || t.contains("ابدأ")
+                        }
+                        if (openDoorBtn != null) {
+                            withContext(Dispatchers.Main) { tvStatus.text = "تأكيد فتح الباب..." }
+                            service.clickNode(openDoorBtn)
+                            service.tapCoordinate(screenW * 0.50f, screenH * 0.803f)
+                            delay(2200)
+                            continue
+                        }
+
+                        // Otherwise tap a door to select it
+                        withContext(Dispatchers.Main) { tvStatus.text = "اختيار باب..." }
+                        val doorCoord = doors[doorIndex % 4]
+                        doorIndex++
+                        service.tapCoordinate(screenW * doorCoord.first, screenH * doorCoord.second)
+                        delay(1000)
+
+                        // Then tap the "افتح الباب" button
+                        withContext(Dispatchers.Main) { tvStatus.text = "فتح الباب..." }
+                        val openBtnAfterClick = service.findTextNodes().find {
+                            val t = it.text?.toString() ?: ""
+                            t.contains("افتح الباب") || t.contains("ابدأ")
+                        }
+                        if (openBtnAfterClick != null) {
+                            service.clickNode(openBtnAfterClick)
+                        }
+                        service.tapCoordinate(screenW * 0.50f, screenH * 0.803f)
+                        delay(2200)
+                        continue
+                    }
+
+                    // 3. Check for Question screen
                     val questionNode = nodes.find {
                         val t = it.text?.toString() ?: ""
-                        t.endsWith("؟") || t.contains("ما ") || t.contains("من ") || t.contains("كم ") || t.contains("في أي")
+                        t.endsWith("؟") || t.contains("ما ") || t.contains("من ") || t.contains("كم ") || t.contains("في أي") || t.contains("ماذا")
                     }
 
                     if (questionNode != null) {
@@ -160,9 +219,12 @@ class FloatingWidgetService : Service() {
                         val optionNodes = nodes.filter {
                             it != questionNode &&
                             !it.text.isNullOrBlank() &&
-                            it.text.length < 50 &&
+                            it.text.length < 65 &&
                             !it.text.contains("تحدي نسك") &&
-                            !it.text.contains("تأكيد الإجابة")
+                            !it.text.contains("تأكيد") &&
+                            !it.text.contains("تحقق") &&
+                            !it.text.contains("مفاتيح") &&
+                            !it.text.contains("فاختر الإجابة")
                         }.take(4)
 
                         if (optionNodes.size >= 2) {
@@ -181,18 +243,24 @@ class FloatingWidgetService : Service() {
                                     t.contains(ans) || ans.contains(t)
                                 } ?: optionNodes.first()
 
-                                withContext(Dispatchers.Main) { tvStatus.text = "تم اختيار: ${targetNode.text}" }
-                                NusukAccessibilityService.instance?.clickNode(targetNode)
+                                withContext(Dispatchers.Main) { tvStatus.text = "اختيار: ${targetNode.text}" }
+                                service.clickNode(targetNode)
                                 delay(600)
 
-                                // Click Confirm button
-                                val confirmNode = nodes.find { it.text?.toString()?.contains("تأكيد") == true }
-                                if (confirmNode != null) {
-                                    NusukAccessibilityService.instance?.clickNode(confirmNode)
+                                // Click Confirm / Verify button ("تحقق من إجابتك" or "تأكيد الإجابة")
+                                withContext(Dispatchers.Main) { tvStatus.text = "تأكيد الإجابة..." }
+                                val confirmNode = service.findTextNodes().find {
+                                    val t = it.text?.toString() ?: ""
+                                    t.contains("تحقق") || t.contains("تأكيد")
                                 }
+                                if (confirmNode != null) {
+                                    service.clickNode(confirmNode)
+                                }
+                                // Also tap coordinates fallback for "تحقق من إجابتك" (y = 0.900 * height)
+                                service.tapCoordinate(screenW * 0.50f, screenH * 0.900f)
                                 delay(2200)
                             } else {
-                                withContext(Dispatchers.Main) { tvStatus.text = "سؤال غير معروف" }
+                                withContext(Dispatchers.Main) { tvStatus.text = "سؤال غير مسجل" }
                                 delay(3000)
                             }
                         }
