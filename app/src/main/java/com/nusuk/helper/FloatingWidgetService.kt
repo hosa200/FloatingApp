@@ -250,6 +250,11 @@ class FloatingWidgetService : Service() {
                                 ans = geminiService.askGemini(apiKey, qText, options)
                             }
 
+                            if (ans == null) {
+                                withContext(Dispatchers.Main) { tvStatus.text = "اختيار تلقائي للمتابعة..." }
+                                ans = options.firstOrNull()
+                            }
+
                             if (ans != null) {
                                 val targetNode = optionNodes.find {
                                     val t = it.text.toString().trim()
@@ -271,9 +276,6 @@ class FloatingWidgetService : Service() {
                                 }
                                 service.tapCoordinate(screenW * 0.50f, screenH * 0.903f)
                                 delay(2200)
-                            } else {
-                                withContext(Dispatchers.Main) { tvStatus.text = "سؤال غير مسجل" }
-                                delay(3000)
                             }
                         }
                     }

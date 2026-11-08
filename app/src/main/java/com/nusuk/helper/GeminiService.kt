@@ -10,12 +10,14 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
+import java.util.regex.Pattern
 
 class GeminiService(private val context: Context) {
 
     private val client = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .writeTimeout(15, TimeUnit.SECONDS)
         .build()
 
     private var localQaBank: JSONArray? = null
@@ -34,7 +36,7 @@ class GeminiService(private val context: Context) {
     }
 
     private fun normalize(text: String): String {
-        return text.replace(Regex("[\\u064B-\\u065F\\u0670\\u0640«»\"'؟?!.,،:؛()\\[\\]\\-]"), " ")
+        return text.replace(Regex("[\\u064B-\\u065F\\u0670\\u0640«»\"'؟?!.,،:؛()\\[\\]\\-*]"), " ")
             .replace(Regex("[أإآ]"), "ا")
             .replace("ة", "ه")
             .replace("ى", "ي")
@@ -80,14 +82,29 @@ class GeminiService(private val context: Context) {
         if (apiKey.isBlank()) return@withContext null
 
         val prompt = """
-            أنت خبير في المسابقات الإسلامية ومعلومات الحج والعمرة والسيرة النبوية.
+            أنت خبير إسلامي وتاريخي ومحكم مسابقات ديني متخصص في السيرة والقرآن والفقه وتاريخ مكة والمدينة.
             السؤال: $question
-            الخيارات:
+            الخيارات المتاحة:
             ${options.mapIndexed { idx, o -> "${idx + 1}. $o" }.joinToString("\n")}
 
-            اختر الإجابة الصحيحة فقط من الخيارات الأربعة أعلاه بدقة 100%. اكتب نص الخيار المطابق تماماً دون أي مقدمات أو شرح إضافي.
+            المطلوب: حدد الخيار الصحيح بنسبة 100%.
+            اكتب رقم الخيار أولاً ثم نصه بالضبط، مثلاً: 2. مريم
         """.trimIndent()
 
+        // Try gemini-1.5-flash first, then fallback to gemini-2.0-flash
+        val models = listOf("gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro")
+
+        for (model in models) {
+            val res = callModel(apiKey, model, prompt, options)
+            if (res != null) {
+                return@withContext res
+            }
+        }
+
+        return@withContext null
+    }
+
+    private fun callModel(apiKey: String, model: String, prompt: String, options: List<String>): String? {
         val jsonBody = JSONObject().apply {
             val contents = JSONArray().apply {
                 put(JSONObject().apply {
@@ -99,13 +116,13 @@ class GeminiService(private val context: Context) {
             put("contents", contents)
             put("generationConfig", JSONObject().apply {
                 put("temperature", 0.0)
-                put("maxOutputTokens", 64)
+                put("maxOutputTokens", 128)
             })
         }
 
         val mediaType = "application/json; charset=utf-8".toMediaType()
         val body = jsonBody.toString().toRequestBody(mediaType)
-        val url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$apiKey"
+        val url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey"
 
         val request = Request.Builder()
             .url(url)
@@ -114,24 +131,55 @@ class GeminiService(private val context: Context) {
 
         try {
             client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return@withContext null
-                val resStr = response.body?.string() ?: return@withContext null
+                if (!response.isSuccessful) return null
+                val resStr = response.body?.string() ?: return null
                 val resJson = JSONObject(resStr)
-                val candidates = resJson.optJSONArray("candidates") ?: return@withContext null
-                if (candidates.length() == 0) return@withContext null
+                val candidates = resJson.optJSONArray("candidates") ?: return null
+                if (candidates.length() == 0) return null
                 val first = candidates.getJSONObject(0)
-                val content = first.optJSONObject("content") ?: return@withContext null
-                val parts = content.optJSONArray("parts") ?: return@withContext null
-                if (parts.length() == 0) return@withContext null
-                val text = parts.getJSONObject(0).optString("text", "").trim()
+                val content = first.optJSONObject("content") ?: return null
+                val parts = content.optJSONArray("parts") ?: return null
+                if (parts.length() == 0) return null
+                val rawText = parts.getJSONObject(0).optString("text", "").trim()
+                val normText = normalize(rawText)
 
-                // Find closest match among options
-                val matched = options.find { normalize(text).contains(normalize(it)) || normalize(it).contains(normalize(text)) }
-                return@withContext matched ?: text
+                // 1. Try detecting option index number (1, 2, 3, 4) at the start
+                val matcher = Pattern.compile("^[\\D]*([1-4])").matcher(rawText)
+                if (matcher.find()) {
+                    val idx = matcher.group(1)?.toIntOrNull()
+                    if (idx != null && idx in 1..options.size) {
+                        return options[idx - 1]
+                    }
+                }
+
+                // 2. Try exact/fuzzy matching text among options
+                for (opt in options) {
+                    val normOpt = normalize(opt)
+                    if (normText.contains(normOpt) || normOpt.contains(normText)) {
+                        return opt
+                    }
+                }
+
+                // 3. Match individual significant words
+                var bestOpt: String? = null
+                var maxMatches = 0
+                for (opt in options) {
+                    val words = normalize(opt).split(" ").filter { it.length >= 3 }
+                    val matchedWords = words.count { normText.contains(it) }
+                    if (matchedWords > maxMatches) {
+                        maxMatches = matchedWords
+                        bestOpt = opt
+                    }
+                }
+                if (maxMatches >= 1) {
+                    return bestOpt
+                }
+
+                return rawText
             }
         } catch (e: Exception) {
             e.printStackTrace()
-            return@withContext null
+            return null
         }
     }
 }
