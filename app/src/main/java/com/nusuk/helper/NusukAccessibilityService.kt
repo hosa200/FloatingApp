@@ -47,6 +47,26 @@ class NusukAccessibilityService : AccessibilityService() {
         }, null)
     }
 
+    fun swipe(startX: Float, startY: Float, endX: Float, endY: Float, duration: Long = 300, callback: (() -> Unit)? = null) {
+        val path = Path().apply {
+            moveTo(startX, startY)
+            lineTo(endX, endY)
+        }
+        val stroke = GestureDescription.StrokeDescription(path, 0, duration)
+        val gesture = GestureDescription.Builder().addStroke(stroke).build()
+
+        dispatchGesture(gesture, object : GestureResultCallback() {
+            override fun onCompleted(gestureDescription: GestureDescription?) {
+                super.onCompleted(gestureDescription)
+                callback?.invoke()
+            }
+        }, null)
+    }
+
+    fun dismissKeyboard() {
+        performGlobalAction(GLOBAL_ACTION_BACK)
+    }
+
     fun findTextNodes(): List<AccessibilityNodeInfo> {
         val root = rootInActiveWindow ?: return emptyList()
         val result = mutableListOf<AccessibilityNodeInfo>()

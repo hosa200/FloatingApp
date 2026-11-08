@@ -328,28 +328,36 @@ class FloatingWidgetService : Service() {
 
                 if (inputNode != null) {
                     service.clickNode(inputNode)
-                    delay(400)
+                    delay(300)
                     val arguments = Bundle().apply {
                         putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, code)
                     }
                     inputNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
                     inputNode.performAction(AccessibilityNodeInfo.ACTION_PASTE)
                 } else {
-                    service.tapCoordinate(screenW * 0.50f, screenH * 0.65f)
-                    delay(400)
+                    service.tapCoordinate(screenW * 0.50f, screenH * 0.60f)
+                    delay(300)
                 }
-                delay(400)
+                delay(300)
 
-                // Click "تفعيل" / "تحقق من الرمز" button
+                // Hide keyboard immediately to prevent blocking
+                service.dismissKeyboard()
+                delay(600)
+
+                // Scroll down the screen to expose "تحقق من الرمز"
+                service.swipe(screenW * 0.50f, screenH * 0.75f, screenW * 0.50f, screenH * 0.35f, duration = 350)
+                delay(700)
+
+                // Click "تحقق من الرمز" / "تفعيل" button
                 val activateBtn = service.findTextNodes().find {
                     val t = it.text?.toString() ?: ""
-                    t.contains("تفعيل") || t.contains("تحقق من الرمز") || t.contains("تحقق")
+                    t.contains("تحقق من الرمز") || t.contains("تحقق") || t.contains("تفعيل")
                 }
                 if (activateBtn != null) {
                     service.clickNode(activateBtn)
                 }
-                service.tapCoordinate(screenW * 0.50f, screenH * 0.72f)
-                delay(2400)
+                service.tapCoordinate(screenW * 0.50f, screenH * 0.78f)
+                delay(2500)
 
                 // Dismiss success popup ("مبارك! تم إضافة مفتاح")
                 val popupBtn = service.findTextNodes().find {
@@ -360,7 +368,7 @@ class FloatingWidgetService : Service() {
                     service.clickNode(popupBtn)
                 }
                 service.tapCoordinate(screenW * 0.50f, screenH * 0.86f)
-                delay(900)
+                delay(800)
             }
 
             // 2. Switch back to "العب" / "المسابقات" tab
