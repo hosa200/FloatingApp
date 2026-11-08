@@ -1,12 +1,16 @@
 package com.nusuk.helper
 
 import android.app.Service
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
 import android.os.Build
+import android.os.Bundle
 import android.os.IBinder
 import android.view.*
+import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.Button
 import android.widget.TextView
 import kotlinx.coroutines.*
@@ -20,24 +24,28 @@ class FloatingWidgetService : Service() {
     private lateinit var btnRefill: Button
 
     private lateinit var geminiService: GeminiService
+    private lateinit var doorKeyRefill: DoorKeyRefill
+
     private var isPlaying = false
+    private var isRefilling = false
     private var loopJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
-    // 4 door relative coordinates on screen (x_ratio, y_ratio)
-    private val doors = listOf(
-        Pair(0.27f, 0.366f),
-        Pair(0.72f, 0.366f),
-        Pair(0.27f, 0.616f),
-        Pair(0.72f, 0.616f)
+    // 4 sections coordinates (السيرة النبوية, القرآن الكريم, المدينة المنورة, مكة المكرمة)
+    private val sections = listOf(
+        Pair(0.27f, 0.450f),
+        Pair(0.72f, 0.450f),
+        Pair(0.27f, 0.700f),
+        Pair(0.72f, 0.700f)
     )
-    private var doorIndex = 0
+    private var sectionIndex = 0
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
         geminiService = GeminiService(applicationContext)
+        doorKeyRefill = DoorKeyRefill(applicationContext)
         initFloatingView()
     }
 
@@ -105,13 +113,7 @@ class FloatingWidgetService : Service() {
 
         btnRefill.setOnClickListener {
             scope.launch {
-                tvStatus.text = "جارِ شحن المفاتيح..."
-                val code = DoorKeyRefill.fetchNextCode()
-                if (code != null) {
-                    tvStatus.text = "تم جلب الرمز: $code"
-                } else {
-                    tvStatus.text = "فشل جلب الرمز"
-                }
+                executeKeyRefill(1)
             }
         }
 
@@ -143,19 +145,38 @@ class FloatingWidgetService : Service() {
 
         loopJob = scope.launch(Dispatchers.Default) {
             while (isActive && isPlaying) {
-                delay(1000)
+                if (isRefilling) {
+                    delay(1000)
+                    continue
+                }
+                delay(900)
                 try {
                     val service = NusukAccessibilityService.instance ?: continue
                     val nodes = service.findTextNodes()
                     val allTexts = nodes.map { it.text.toString().trim() }
-                    val fullScreenText = allTexts.joinToString(" ")
+                    val fullText = allTexts.joinToString(" ")
 
-                    // 1. Check for Result / Mubarak screen
+                    // 1. Detect "No Keys" modal
+                    if (allTexts.any { it.contains("لا تملك مفاتيح") || it.contains("نفدت المفاتيح") }) {
+                        withContext(Dispatchers.Main) { tvStatus.text = "نفدت المفاتيح -> شحن تلقائي..." }
+                        // Close modal by clicking "إغلاق" or tapping background
+                        val closeBtn = nodes.find { it.text?.toString()?.contains("إغلاق") == true }
+                        if (closeBtn != null) {
+                            service.clickNode(closeBtn)
+                        } else {
+                            service.tapCoordinate(screenW * 0.50f, screenH * 0.83f)
+                        }
+                        delay(1200)
+                        executeKeyRefill(5)
+                        continue
+                    }
+
+                    // 2. Detect Result screen ("مبارك!", "صحيحة", "العب مرة أخرى")
                     val isResultScreen = allTexts.any {
                         it.contains("مبارك") || it.contains("العب مرة أخرى") || it.contains("إجابة صحيحة") || it.contains("خيرها في غيرها")
                     }
                     if (isResultScreen) {
-                        withContext(Dispatchers.Main) { tvStatus.text = "الضغط على العب مرة أخرى..." }
+                        withContext(Dispatchers.Main) { tvStatus.text = "العب مرة أخرى..." }
                         val playAgainNode = nodes.find {
                             val t = it.text?.toString() ?: ""
                             t.contains("العب مرة أخرى") || t.contains("العب") || t.contains("متابعة")
@@ -163,55 +184,47 @@ class FloatingWidgetService : Service() {
                         if (playAgainNode != null) {
                             service.clickNode(playAgainNode)
                         }
-                        // Also tap coordinates fallback for "العب مرة أخرى" (y = 0.858 * height)
                         service.tapCoordinate(screenW * 0.50f, screenH * 0.858f)
-                        delay(1500)
+                        delay(1800)
                         continue
                     }
 
-                    // 2. Check for Doors Selection screen ("اختر الباب", "الأبواب", etc.)
-                    val isDoorsScreen = allTexts.any {
-                        it.contains("اختر الباب") || it.contains("الأبواب") || it.contains("ابدأ التحدي") || it.contains("افتح الباب")
-                    }
-                    if (isDoorsScreen) {
-                        // Check if "افتح الباب" popup is already visible
-                        val openDoorBtn = nodes.find {
-                            val t = it.text?.toString() ?: ""
-                            t.contains("افتح الباب") || t.contains("ابدأ")
-                        }
+                    // 3. Detect "افتح الباب" popup dialog
+                    val openDoorDialog = allTexts.any { it.contains("هل تريد استخدام مفتاحك") || it.contains("ستفقد مفتاح") }
+                    val openDoorBtn = nodes.find { it.text?.toString()?.contains("افتح الباب") == true }
+                    if (openDoorDialog || openDoorBtn != null) {
+                        withContext(Dispatchers.Main) { tvStatus.text = "تأكيد: افتح الباب..." }
                         if (openDoorBtn != null) {
-                            withContext(Dispatchers.Main) { tvStatus.text = "تأكيد فتح الباب..." }
                             service.clickNode(openDoorBtn)
-                            service.tapCoordinate(screenW * 0.50f, screenH * 0.803f)
-                            delay(2200)
-                            continue
                         }
-
-                        // Otherwise tap a door to select it
-                        withContext(Dispatchers.Main) { tvStatus.text = "اختيار باب..." }
-                        val doorCoord = doors[doorIndex % 4]
-                        doorIndex++
-                        service.tapCoordinate(screenW * doorCoord.first, screenH * doorCoord.second)
-                        delay(1000)
-
-                        // Then tap the "افتح الباب" button
-                        withContext(Dispatchers.Main) { tvStatus.text = "فتح الباب..." }
-                        val openBtnAfterClick = service.findTextNodes().find {
-                            val t = it.text?.toString() ?: ""
-                            t.contains("افتح الباب") || t.contains("ابدأ")
-                        }
-                        if (openBtnAfterClick != null) {
-                            service.clickNode(openBtnAfterClick)
-                        }
-                        service.tapCoordinate(screenW * 0.50f, screenH * 0.803f)
+                        service.tapCoordinate(screenW * 0.50f, screenH * 0.817f)
                         delay(2200)
                         continue
                     }
 
-                    // 3. Check for Question screen
+                    // 4. Detect Categories / Sections screen (السيرة النبوية, القرآن الكريم, المدينة, مكة)
+                    val isCategoriesScreen = allTexts.any {
+                        it.contains("السيرة النبوية") || it.contains("القرآن الكريم") || it.contains("مكة المكرمة") || it.contains("المدينة المنورة")
+                    } && !allTexts.any { it.endsWith("؟") }
+
+                    if (isCategoriesScreen) {
+                        withContext(Dispatchers.Main) { tvStatus.text = "فتح قسم/باب جديد..." }
+                        val sec = sections[sectionIndex % 4]
+                        sectionIndex++
+                        service.tapCoordinate(screenW * sec.first, screenH * sec.second)
+                        delay(1000)
+
+                        // Immediately click "افتح الباب" on popup
+                        service.tapCoordinate(screenW * 0.50f, screenH * 0.817f)
+                        delay(2200)
+                        continue
+                    }
+
+                    // 5. Detect Question Screen
                     val questionNode = nodes.find {
                         val t = it.text?.toString() ?: ""
-                        t.endsWith("؟") || t.contains("ما ") || t.contains("من ") || t.contains("كم ") || t.contains("في أي") || t.contains("ماذا")
+                        (t.endsWith("؟") || t.contains("ما ") || t.contains("من ") || t.contains("كم ") || t.contains("في أي") || t.contains("ماذا")) &&
+                        !t.contains("هل تريد استخدام")
                     }
 
                     if (questionNode != null) {
@@ -221,10 +234,10 @@ class FloatingWidgetService : Service() {
                             !it.text.isNullOrBlank() &&
                             it.text.length < 65 &&
                             !it.text.contains("تحدي نسك") &&
-                            !it.text.contains("تأكيد") &&
                             !it.text.contains("تحقق") &&
-                            !it.text.contains("مفاتيح") &&
-                            !it.text.contains("فاختر الإجابة")
+                            !it.text.contains("تأكيد") &&
+                            !it.text.contains("فاختر الإجابة") &&
+                            !it.text.contains("لتضمن دخولك")
                         }.take(4)
 
                         if (optionNodes.size >= 2) {
@@ -247,8 +260,8 @@ class FloatingWidgetService : Service() {
                                 service.clickNode(targetNode)
                                 delay(600)
 
-                                // Click Confirm / Verify button ("تحقق من إجابتك" or "تأكيد الإجابة")
-                                withContext(Dispatchers.Main) { tvStatus.text = "تأكيد الإجابة..." }
+                                // Click Confirm / Verify button ("تحقق من إجابتك")
+                                withContext(Dispatchers.Main) { tvStatus.text = "تحقق من إجابتك..." }
                                 val confirmNode = service.findTextNodes().find {
                                     val t = it.text?.toString() ?: ""
                                     t.contains("تحقق") || t.contains("تأكيد")
@@ -256,8 +269,7 @@ class FloatingWidgetService : Service() {
                                 if (confirmNode != null) {
                                     service.clickNode(confirmNode)
                                 }
-                                // Also tap coordinates fallback for "تحقق من إجابتك" (y = 0.900 * height)
-                                service.tapCoordinate(screenW * 0.50f, screenH * 0.900f)
+                                service.tapCoordinate(screenW * 0.50f, screenH * 0.903f)
                                 delay(2200)
                             } else {
                                 withContext(Dispatchers.Main) { tvStatus.text = "سؤال غير مسجل" }
@@ -269,6 +281,62 @@ class FloatingWidgetService : Service() {
                     e.printStackTrace()
                 }
             }
+        }
+    }
+
+    private suspend fun executeKeyRefill(count: Int = 1) = withContext(Dispatchers.Main) {
+        val service = NusukAccessibilityService.instance ?: return@withContext
+        if (isRefilling) return@withContext
+        isRefilling = true
+        tvStatus.text = "بدء شحن المفاتيح..."
+
+        val dm = resources.displayMetrics
+        val screenW = dm.widthPixels.toFloat()
+        val screenH = dm.heightPixels.toFloat()
+
+        try {
+            // 1. Switch to "مفاتيحك" tab (middle-bottom tab: x = 50%, y = 87.6%)
+            service.tapCoordinate(screenW * 0.50f, screenH * 0.876f)
+            delay(1200)
+
+            for (i in 0 until count) {
+                val code = doorKeyRefill.getNextCode() ?: break
+                tvStatus.text = "شحن كود ($i/$count): $code"
+
+                // Click input field (y = 60.2%)
+                service.tapCoordinate(screenW * 0.50f, screenH * 0.602f)
+                delay(400)
+
+                // Paste code into the input field via Accessibility or Clipboard
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("code", code))
+
+                val inputNode = service.findTextNodes().find {
+                    it.isEditable || it.className?.toString()?.contains("EditText") == true
+                }
+                if (inputNode != null) {
+                    val arguments = Bundle().apply {
+                        putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, code)
+                    }
+                    inputNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
+                }
+                delay(300)
+
+                // Click "تفعيل" / "تحقق من الرمز" button (y = 68.8%)
+                service.tapCoordinate(screenW * 0.50f, screenH * 0.688f)
+                delay(2200)
+
+                // Dismiss success popup ("مبارك! تم إضافة مفتاح") (y = 85.8%)
+                service.tapCoordinate(screenW * 0.50f, screenH * 0.858f)
+                delay(800)
+            }
+
+            // 2. Switch back to "العب" tab (right-bottom tab: x = 90%, y = 87.6%)
+            tvStatus.text = "تم الشحن! العودة للعب..."
+            service.tapCoordinate(screenW * 0.90f, screenH * 0.876f)
+            delay(1200)
+        } finally {
+            isRefilling = false
         }
     }
 
