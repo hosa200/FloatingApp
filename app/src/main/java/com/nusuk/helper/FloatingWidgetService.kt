@@ -295,46 +295,84 @@ class FloatingWidgetService : Service() {
         val screenH = dm.heightPixels.toFloat()
 
         try {
-            // 1. Switch to "مفاتيحك" tab (middle-bottom tab: x = 50%, y = 87.6%)
-            service.tapCoordinate(screenW * 0.50f, screenH * 0.876f)
-            delay(1200)
+            // 1. Switch to "مفاتيحك" tab
+            val currentNodes = service.findTextNodes()
+            val keysTab = currentNodes.find {
+                val t = it.text?.toString() ?: ""
+                t.contains("مفاتيح") || t.contains("مفتاحك")
+            }
+            if (keysTab != null) {
+                service.clickNode(keysTab)
+            } else {
+                service.tapCoordinate(screenW * 0.50f, screenH * 0.96f)
+            }
+            delay(1600)
 
             for (i in 0 until count) {
                 val code = doorKeyRefill.getNextCode() ?: break
-                tvStatus.text = "شحن كود ($i/$count): $code"
+                tvStatus.text = "شحن ($i/$count): $code"
 
-                // Click input field (y = 60.2%)
-                service.tapCoordinate(screenW * 0.50f, screenH * 0.602f)
-                delay(400)
-
-                // Paste code into the input field via Accessibility or Clipboard
+                // Copy code to clipboard
                 val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 clipboard.setPrimaryClip(ClipData.newPlainText("code", code))
 
-                val inputNode = service.findTextNodes().find {
-                    it.isEditable || it.className?.toString()?.contains("EditText") == true
+                val refillNodes = service.findTextNodes()
+                val inputNode = refillNodes.find {
+                    it.isEditable ||
+                    it.className?.toString()?.contains("EditText") == true ||
+                    it.text?.toString()?.contains("رمز") == true ||
+                    it.text?.toString()?.contains("أدخل") == true
                 }
+
                 if (inputNode != null) {
+                    service.clickNode(inputNode)
+                    delay(400)
                     val arguments = Bundle().apply {
                         putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, code)
                     }
                     inputNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
+                    inputNode.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+                } else {
+                    service.tapCoordinate(screenW * 0.50f, screenH * 0.65f)
+                    delay(400)
                 }
-                delay(300)
+                delay(400)
 
-                // Click "تفعيل" / "تحقق من الرمز" button (y = 68.8%)
-                service.tapCoordinate(screenW * 0.50f, screenH * 0.688f)
-                delay(2200)
+                // Click "تفعيل" / "تحقق من الرمز" button
+                val activateBtn = service.findTextNodes().find {
+                    val t = it.text?.toString() ?: ""
+                    t.contains("تفعيل") || t.contains("تحقق من الرمز") || t.contains("تحقق")
+                }
+                if (activateBtn != null) {
+                    service.clickNode(activateBtn)
+                }
+                service.tapCoordinate(screenW * 0.50f, screenH * 0.72f)
+                delay(2400)
 
-                // Dismiss success popup ("مبارك! تم إضافة مفتاح") (y = 85.8%)
-                service.tapCoordinate(screenW * 0.50f, screenH * 0.858f)
-                delay(800)
+                // Dismiss success popup ("مبارك! تم إضافة مفتاح")
+                val popupBtn = service.findTextNodes().find {
+                    val t = it.text?.toString() ?: ""
+                    t.contains("مبارك") || t.contains("إغلاق") || t.contains("متابعة") || t.contains("تم")
+                }
+                if (popupBtn != null) {
+                    service.clickNode(popupBtn)
+                }
+                service.tapCoordinate(screenW * 0.50f, screenH * 0.86f)
+                delay(900)
             }
 
-            // 2. Switch back to "العب" tab (right-bottom tab: x = 90%, y = 87.6%)
+            // 2. Switch back to "العب" / "المسابقات" tab
             tvStatus.text = "تم الشحن! العودة للعب..."
-            service.tapCoordinate(screenW * 0.90f, screenH * 0.876f)
-            delay(1200)
+            val playTab = service.findTextNodes().find {
+                val t = it.text?.toString() ?: ""
+                t.contains("المسابقات") || t.contains("الرئيسية") || t.contains("العب") || t.contains("تحدي")
+            }
+            if (playTab != null) {
+                service.clickNode(playTab)
+            } else {
+                service.tapCoordinate(screenW * 0.90f, screenH * 0.96f)
+            }
+            delay(1500)
         } finally {
             isRefilling = false
         }
