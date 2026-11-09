@@ -345,11 +345,11 @@ class FloatingWidgetService : Service() {
                 val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 clipboard.setPrimaryClip(ClipData.newPlainText("code", code))
 
-                // Set text directly into input node or fallback coordinate (x=50%, y=66.7%)
-                service.setInputText(code, screenW * 0.50f, screenH * 0.667f)
+                // Set text directly into input node or fallback coordinate (x=50%, y=70%)
+                service.setInputText(code, screenW * 0.50f, screenH * 0.70f)
                 delay(700)
 
-                // Click "تحقق من الرمز" button (at x=50%, y=79.2%)
+                // Click "تحقق من الرمز" button (at x=50%, y=79.1%)
                 val activateBtn = service.findTextNodes().find {
                     val t = service.getNodeText(it)
                     t.contains("تحقق من الرمز") || (t.contains("تحقق") && !t.contains("إجابتك")) || t.contains("تفعيل")
@@ -357,10 +357,10 @@ class FloatingWidgetService : Service() {
                 if (activateBtn != null) {
                     service.clickNode(activateBtn)
                 }
-                // ALWAYS also dispatch physical tap at the exact center of the button (y=79.2%)
-                service.tapCoordinate(screenW * 0.50f, screenH * 0.792f)
+                // ALWAYS also dispatch physical tap at the exact center of the button (y=79.1%)
+                service.tapCoordinate(screenW * 0.50f, screenH * 0.791f)
                 delay(250)
-                service.tapCoordinate(screenW * 0.50f, screenH * 0.792f)
+                service.tapCoordinate(screenW * 0.50f, screenH * 0.791f)
                 delay(2600)
 
                 // Dismiss success popup if any ("مبارك!", "تم إضافة مفتاح", "إغلاق", "متابعة")

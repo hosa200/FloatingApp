@@ -97,7 +97,7 @@ class NusukAccessibilityService : AccessibilityService() {
         val args = android.os.Bundle().apply {
             putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, code)
         }
-        val selectAllArgs = android.os.Bundle().apply {
+        val selectAll = android.os.Bundle().apply {
             putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, 0)
             putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, 1000)
         }
@@ -113,36 +113,22 @@ class NusukAccessibilityService : AccessibilityService() {
             it.text?.toString()?.contains("أدخل") == true
         }
 
-        var inputX = fallbackX
-        var inputY = fallbackY
-
         if (target != null) {
-            val rect = Rect()
-            target.getBoundsInScreen(rect)
-            if (rect.width() > 0 && rect.height() > 0) {
-                inputX = rect.exactCenterX()
-                inputY = rect.exactCenterY()
-            }
+            clickNode(target)
+            try { Thread.sleep(250) } catch (e: Exception) {}
+            target.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+            target.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, selectAll)
+            target.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+            target.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+            return
         }
 
-        // Tap the input field directly to gain focus
-        tapCoordinate(inputX, inputY)
-        try { Thread.sleep(250) } catch (e: Exception) {}
-
-        val inputNode = target ?: findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: root?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
-
-        if (inputNode != null) {
-            inputNode.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
-            inputNode.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, selectAllArgs)
-            inputNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
-            // Unconditionally paste
-            inputNode.performAction(AccessibilityNodeInfo.ACTION_PASTE)
-        }
-
+        tapCoordinate(fallbackX, fallbackY)
+        try { Thread.sleep(350) } catch (e: Exception) {}
         val focused = findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: root?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
-        if (focused != null && focused != inputNode) {
+        if (focused != null) {
             focused.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
-            focused.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, selectAllArgs)
+            focused.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, selectAll)
             focused.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
             focused.performAction(AccessibilityNodeInfo.ACTION_PASTE)
         }
