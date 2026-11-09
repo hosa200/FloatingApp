@@ -176,7 +176,7 @@ class FloatingWidgetService : Service() {
                             service.tapCoordinate(screenW * 0.50f, screenH * 0.77f)
                         }
                         delay(1200)
-                        executeKeyRefill(5)
+                        executeKeyRefill(1)
                         continue
                     }
 
@@ -350,6 +350,16 @@ class FloatingWidgetService : Service() {
             delay(1500)
 
             for (i in 0 until count) {
+                // If "أضف رمزاً جديداً وخذ مفتاحاً آخر" is visible from a previous key, click it first to reveal the input box
+                val addAnotherNode = service.findTextNodes().find {
+                    val t = service.getNodeText(it)
+                    t.contains("أضف رمز") || t.contains("اضف رمز") || t.contains("مفتاحاً آخر") || t.contains("مفتاحا آخر")
+                }
+                if (addAnotherNode != null) {
+                    service.clickNode(addAnotherNode)
+                    delay(900)
+                }
+
                 val code = doorKeyRefill.getNextCode() ?: break
                 tvStatus.text = "شحن (${i + 1}/$count): $code"
 
@@ -381,7 +391,7 @@ class FloatingWidgetService : Service() {
                 val verifyBtnX = realW * 0.50f
                 val verifyBtnY = maxOf(realH * 0.792f, screenH * 0.831f)
                 service.tapCoordinate(verifyBtnX, verifyBtnY)
-                delay(2600)
+                delay(2200)
 
                 // 5. Dismiss result popup if any ("إغلاق", "متابعة", "حسناً")
                 val popupBtn = service.findTextNodes().find {
@@ -392,22 +402,32 @@ class FloatingWidgetService : Service() {
                     service.clickNode(popupBtn)
                     delay(800)
                 } else {
-                    delay(500)
+                    delay(400)
                 }
             }
 
-            // 2. Switch back to "العب" tab (Tab 1 at far right: x=90%, y=92%)
+            // 2. Return to doors / "العب" screen immediately (via "العب مرة أخرى" button or "العب" tab)
             tvStatus.text = "تم الشحن! العودة للعب..."
             service.dismissKeyboard()
-            delay(500)
-            val playTab = service.findTextNodes().find {
+            delay(400)
+            val postNodes = service.findTextNodes()
+            val playAgainBtn = postNodes.find {
                 val t = service.getNodeText(it)
-                t.contains("العب") || t.contains("مسابقاتنا") || t.contains("المسابقات")
+                t.contains("العب مرة أخرى")
             }
-            if (playTab != null) {
-                service.clickNode(playTab)
+            if (playAgainBtn != null) {
+                service.clickNode(playAgainBtn)
+                service.tapCoordinate(screenW * 0.50f, screenH * 0.858f)
             } else {
-                service.tapCoordinate(screenW * 0.90f, screenH * 0.92f)
+                val playTab = postNodes.find {
+                    val t = service.getNodeText(it)
+                    t.contains("العب") || t.contains("مسابقاتنا") || t.contains("المسابقات")
+                }
+                if (playTab != null) {
+                    service.clickNode(playTab)
+                } else {
+                    service.tapCoordinate(screenW * 0.90f, screenH * 0.92f)
+                }
             }
             delay(1500)
         } finally {
