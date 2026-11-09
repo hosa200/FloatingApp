@@ -6,6 +6,7 @@ import android.graphics.Path
 import android.graphics.Rect
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 
 class NusukAccessibilityService : AccessibilityService() {
 
@@ -84,16 +85,34 @@ class NusukAccessibilityService : AccessibilityService() {
     }
 
     fun isKeyboardShowing(): Boolean {
-        val wins = windows ?: return false
-        return wins.any { it.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+        return try {
+            val wins = windows ?: return false
+            wins.any { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+        } catch (e: Exception) {
+            false
+        }
     }
 
     fun dismissKeyboard() {
-        hideSoftKeyboard()
+        if (isKeyboardShowing()) {
+            performGlobalAction(GLOBAL_ACTION_BACK)
+            return
+        }
+        // Fallback: If "تحقق" button is not visible on screen, keyboard is likely obscuring it
+        val hasVerify = findTextNodes().any {
+            val t = getNodeText(it)
+            t.contains("تحقق من الرمز") || (t.contains("تحقق") && !t.contains("إجابتك"))
+        }
+        if (!hasVerify) {
+            performGlobalAction(GLOBAL_ACTION_BACK)
+        }
     }
 
     fun setInputText(code: String, fallbackX: Float, fallbackY: Float) {
         val root = rootInActiveWindow
+        val emptyArgs = android.os.Bundle().apply {
+            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, "")
+        }
         val args = android.os.Bundle().apply {
             putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, code)
         }
@@ -103,35 +122,76 @@ class NusukAccessibilityService : AccessibilityService() {
         }
 
         val nodes = findTextNodes()
+        // Find real input target - NEVER match the static label "أدخل الرمز لتفعيل مفتاح جديد" and NEVER buttons
         val target = nodes.find {
-            it.isEditable ||
-            it.className?.toString()?.contains("EditText") == true ||
-            (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O && (it.hintText?.toString()?.contains("رمز") == true || it.hintText?.toString()?.contains("أدخل") == true)) ||
-            it.contentDescription?.toString()?.contains("رمز") == true ||
-            it.contentDescription?.toString()?.contains("أدخل") == true ||
-            it.text?.toString()?.contains("رمز") == true ||
-            it.text?.toString()?.contains("أدخل") == true
+            it.isEditable || it.className?.toString()?.contains("EditText") == true
+        } ?: nodes.find {
+            val t = getNodeText(it)
+            val hint = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) it.hintText?.toString() ?: "" else ""
+            !t.contains("لتفعيل مفتاح جديد") && !t.contains("تحقق") && !t.contains("المفاتيح") && !t.contains("العب") &&
+            (it.isFocusable || hint.contains("رمز") || hint.contains("أدخل") || t.contains("أدخل رمز") || t == "أدخل الرمز")
         }
 
         if (target != null) {
             clickNode(target)
-            try { Thread.sleep(250) } catch (e: Exception) {}
-            target.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
-            target.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, selectAll)
-            target.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
-            target.performAction(AccessibilityNodeInfo.ACTION_PASTE)
-            return
+        } else {
+            tapCoordinate(fallbackX, fallbackY)
         }
 
-        tapCoordinate(fallbackX, fallbackY)
         try { Thread.sleep(350) } catch (e: Exception) {}
-        val focused = findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: root?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+
+        // 1. Try on focused input node
+        val focused = findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+            ?: rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+            ?: target
+
         if (focused != null) {
-            focused.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
-            focused.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, selectAll)
-            focused.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
-            focused.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+            try {
+                focused.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+                focused.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, selectAll)
+                focused.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, emptyArgs)
+                focused.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+                focused.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
+
+        // 2. Also check across all windows for the clipboard suggestion chip on the keyboard
+        try {
+            val allNodes = findAllNodes()
+            val chip = allNodes.find {
+                val t = getNodeText(it)
+                t == code || t.contains(code) || (code.length >= 6 && t.contains(code.take(6))) || (t.startsWith("NG-") && t.length >= 5)
+            }
+            if (chip != null) {
+                clickNode(chip)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun findAllNodes(): List<AccessibilityNodeInfo> {
+        val result = mutableListOf<AccessibilityNodeInfo>()
+        val roots = mutableListOf<AccessibilityNodeInfo>()
+
+        try {
+            rootInActiveWindow?.let { roots.add(it) }
+        } catch (e: Exception) {}
+
+        try {
+            windows?.forEach { win ->
+                try {
+                    win.root?.let { roots.add(it) }
+                } catch (e: Exception) {}
+            }
+        } catch (e: Exception) {}
+
+        for (r in roots) {
+            traverse(r, result)
+        }
+        return result
     }
 
     fun findTextNodes(): List<AccessibilityNodeInfo> {

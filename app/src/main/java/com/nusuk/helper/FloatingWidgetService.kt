@@ -347,7 +347,15 @@ class FloatingWidgetService : Service() {
 
                 // Set text directly into input node or fallback coordinate (x=50%, y=70%)
                 service.setInputText(code, screenW * 0.50f, screenH * 0.70f)
-                delay(700)
+                delay(600)
+
+                // Dismiss keyboard so "تحقق من الرمز" button is completely visible and accessible
+                service.dismissKeyboard()
+                delay(400)
+                if (service.isKeyboardShowing()) {
+                    service.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)
+                    delay(400)
+                }
 
                 // Click "تحقق من الرمز" button (at x=50%, y=79.1%)
                 val activateBtn = service.findTextNodes().find {
@@ -378,6 +386,8 @@ class FloatingWidgetService : Service() {
 
             // 2. Switch back to "العب" tab (Tab 1 at far right: x=90%, y=92%)
             tvStatus.text = "تم الشحن! العودة للعب..."
+            service.dismissKeyboard()
+            delay(300)
             val playTab = service.findTextNodes().find {
                 val t = service.getNodeText(it)
                 t.contains("العب") || t.contains("مسابقاتنا") || t.contains("المسابقات")
