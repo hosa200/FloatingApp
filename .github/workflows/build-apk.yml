@@ -18,15 +18,17 @@ jobs:
       with:
         java-version: '17'
         distribution: 'temurin'
+        cache: 'gradle'
 
-    - name: Set up Gradle 8.5
-      uses: gradle/actions/setup-gradle@v3
-      with:
-        gradle-version: '8.5'
+    - name: Setup Gradle 8.5 Wrapper
+      run: |
+        gradle wrapper --gradle-version 8.5 --distribution-type bin
+        chmod +x gradlew
 
     - name: Build Debug APK
-      run: |
-        gradle assembleDebug --stacktrace
+      run: ./gradlew assembleDebug --stacktrace --no-daemon
+      env:
+        GRADLE_OPTS: "-Dorg.gradle.internal.http.socketTimeout=60000 -Dorg.gradle.internal.http.connectionTimeout=60000"
 
     - name: Upload Debug APK Artifact
       uses: actions/upload-artifact@v4
