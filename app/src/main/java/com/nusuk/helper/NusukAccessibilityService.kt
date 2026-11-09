@@ -63,8 +63,24 @@ class NusukAccessibilityService : AccessibilityService() {
         }, null)
     }
 
-    fun dismissKeyboard() {
-        performGlobalAction(GLOBAL_ACTION_BACK)
+    fun hideSoftKeyboard() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+            try {
+                softKeyboardController.showMode = SHOW_MODE_HIDDEN
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun restoreSoftKeyboard() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+            try {
+                softKeyboardController.showMode = SHOW_MODE_AUTO
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
     }
 
     fun findTextNodes(): List<AccessibilityNodeInfo> {

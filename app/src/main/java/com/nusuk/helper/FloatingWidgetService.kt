@@ -318,6 +318,9 @@ class FloatingWidgetService : Service() {
                 val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 clipboard.setPrimaryClip(ClipData.newPlainText("code", code))
 
+                // Ensure keyboard is hidden
+                service.hideSoftKeyboard()
+
                 val refillNodes = service.findTextNodes()
                 val inputNode = refillNodes.find {
                     it.isEditable ||
@@ -327,26 +330,25 @@ class FloatingWidgetService : Service() {
                 }
 
                 if (inputNode != null) {
-                    service.clickNode(inputNode)
-                    delay(300)
                     val arguments = Bundle().apply {
                         putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, code)
                     }
-                    inputNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
-                    inputNode.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+                    val setTextSuccess = inputNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
+                    if (!setTextSuccess) {
+                        service.clickNode(inputNode)
+                        delay(400)
+                        inputNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
+                        inputNode.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+                    }
                 } else {
-                    service.tapCoordinate(screenW * 0.50f, screenH * 0.60f)
+                    service.tapCoordinate(screenW * 0.50f, screenH * 0.58f)
                     delay(300)
                 }
-                delay(300)
+                delay(400)
 
-                // Hide keyboard immediately to prevent blocking
-                service.dismissKeyboard()
-                delay(600)
-
-                // Scroll down the screen to expose "تحقق من الرمز"
+                // Scroll down the screen (Swiping natively closes the keyboard and exposes "تحقق من الرمز")
                 service.swipe(screenW * 0.50f, screenH * 0.75f, screenW * 0.50f, screenH * 0.35f, duration = 350)
-                delay(700)
+                delay(800)
 
                 // Click "تحقق من الرمز" / "تفعيل" button
                 val activateBtn = service.findTextNodes().find {
@@ -355,9 +357,10 @@ class FloatingWidgetService : Service() {
                 }
                 if (activateBtn != null) {
                     service.clickNode(activateBtn)
+                } else {
+                    service.tapCoordinate(screenW * 0.50f, screenH * 0.72f)
                 }
-                service.tapCoordinate(screenW * 0.50f, screenH * 0.78f)
-                delay(2500)
+                delay(2600)
 
                 // Dismiss success popup ("مبارك! تم إضافة مفتاح")
                 val popupBtn = service.findTextNodes().find {
@@ -366,8 +369,9 @@ class FloatingWidgetService : Service() {
                 }
                 if (popupBtn != null) {
                     service.clickNode(popupBtn)
+                } else {
+                    service.tapCoordinate(screenW * 0.50f, screenH * 0.86f)
                 }
-                service.tapCoordinate(screenW * 0.50f, screenH * 0.86f)
                 delay(800)
             }
 
