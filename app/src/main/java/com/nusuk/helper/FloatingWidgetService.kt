@@ -344,20 +344,21 @@ class FloatingWidgetService : Service() {
                 // Copy code to clipboard
                 val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 clipboard.setPrimaryClip(ClipData.newPlainText("code", code))
+                delay(250)
 
-                // Set text directly into input node or fallback coordinate (x=50%, y=70%)
-                service.setInputText(code, screenW * 0.50f, screenH * 0.70f)
-                delay(600)
+                // 1. Tap input box center (x=50%, y=67.5%) and wait 1s for keyboard + clipboard chip to appear
+                service.focusInputBox(screenW * 0.50f, screenH * 0.675f)
+                delay(1000)
 
-                // Dismiss keyboard so "تحقق من الرمز" button is completely visible and accessible
+                // 2. Tap the clipboard suggestion chip on top of the keyboard (x=50%, y=62.6%)
+                service.pasteFromKeyboardChip(code, screenW, screenH)
+                delay(700)
+
+                // 3. Dismiss keyboard ONCE (only if keyboard is actually showing) and wait 900ms for it to close
                 service.dismissKeyboard()
-                delay(400)
-                if (service.isKeyboardShowing()) {
-                    service.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)
-                    delay(400)
-                }
+                delay(900)
 
-                // Click "تحقق من الرمز" button (at x=50%, y=79.1%)
+                // 4. Click "تحقق من الرمز" button (at x=50%, y=79.1%)
                 val activateBtn = service.findTextNodes().find {
                     val t = service.getNodeText(it)
                     t.contains("تحقق من الرمز") || (t.contains("تحقق") && !t.contains("إجابتك")) || t.contains("تفعيل")
@@ -386,7 +387,6 @@ class FloatingWidgetService : Service() {
 
             // 2. Switch back to "العب" tab (Tab 1 at far right: x=90%, y=92%)
             tvStatus.text = "تم الشحن! العودة للعب..."
-            service.dismissKeyboard()
             delay(300)
             val playTab = service.findTextNodes().find {
                 val t = service.getNodeText(it)

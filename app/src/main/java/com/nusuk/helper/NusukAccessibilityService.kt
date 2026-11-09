@@ -93,28 +93,17 @@ class NusukAccessibilityService : AccessibilityService() {
         }
     }
 
-    fun dismissKeyboard() {
+    fun dismissKeyboard(): Boolean {
         if (isKeyboardShowing()) {
             performGlobalAction(GLOBAL_ACTION_BACK)
-            return
+            return true
         }
-        // Fallback: If "تحقق" button is not visible on screen, keyboard is likely obscuring it
-        val hasVerify = findTextNodes().any {
-            val t = getNodeText(it)
-            t.contains("تحقق من الرمز") || (t.contains("تحقق") && !t.contains("إجابتك"))
-        }
-        if (!hasVerify) {
-            performGlobalAction(GLOBAL_ACTION_BACK)
-        }
+        return false
     }
 
-    fun setInputText(code: String, fallbackX: Float, fallbackY: Float) {
-        val root = rootInActiveWindow
+    fun focusInputBox(fallbackX: Float, fallbackY: Float) {
         val emptyArgs = android.os.Bundle().apply {
             putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, "")
-        }
-        val args = android.os.Bundle().apply {
-            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, code)
         }
         val selectAll = android.os.Bundle().apply {
             putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, 0)
@@ -122,53 +111,66 @@ class NusukAccessibilityService : AccessibilityService() {
         }
 
         val nodes = findTextNodes()
-        // Find real input target - NEVER match the static label "أدخل الرمز لتفعيل مفتاح جديد" and NEVER buttons
         val target = nodes.find {
             it.isEditable || it.className?.toString()?.contains("EditText") == true
         } ?: nodes.find {
             val t = getNodeText(it)
-            val hint = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) it.hintText?.toString() ?: "" else ""
-            !t.contains("لتفعيل مفتاح جديد") && !t.contains("تحقق") && !t.contains("المفاتيح") && !t.contains("العب") &&
-            (it.isFocusable || hint.contains("رمز") || hint.contains("أدخل") || t.contains("أدخل رمز") || t == "أدخل الرمز")
+            t.contains("لتفعيل مفتاح جديد") || t.contains("أدخل الرمز") || t.contains("أدخل رمز")
         }
 
         if (target != null) {
-            clickNode(target)
-        } else {
-            tapCoordinate(fallbackX, fallbackY)
+            try {
+                target.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+                target.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, selectAll)
+                target.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, emptyArgs)
+            } catch (e: Exception) {}
         }
 
-        try { Thread.sleep(350) } catch (e: Exception) {}
+        // Always tap the physical center of the input box to open the keyboard
+        tapCoordinate(fallbackX, fallbackY)
+    }
 
-        // 1. Try on focused input node
+    fun pasteFromKeyboardChip(code: String, screenW: Float, screenH: Float) {
+        val emptyArgs = android.os.Bundle().apply {
+            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, "")
+        }
+        val selectAll = android.os.Bundle().apply {
+            putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, 0)
+            putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, 1000)
+        }
+
+        // Clear any previous text in focused node before tapping the clipboard chip
         val focused = findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
             ?: rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
-            ?: target
-
         if (focused != null) {
             try {
-                focused.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
                 focused.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, selectAll)
                 focused.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, emptyArgs)
-                focused.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
-                focused.performAction(AccessibilityNodeInfo.ACTION_PASTE)
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+            } catch (e: Exception) {}
         }
 
-        // 2. Also check across all windows for the clipboard suggestion chip on the keyboard
+        // 1. Check if the clipboard chip node is exposed in the IME window
+        var chipClicked = false
         try {
-            val allNodes = findAllNodes()
-            val chip = allNodes.find {
+            val imeNodes = mutableListOf<AccessibilityNodeInfo>()
+            windows?.filter { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }?.forEach { win ->
+                win.root?.let { traverse(it, imeNodes) }
+            }
+            val chip = imeNodes.find {
                 val t = getNodeText(it)
                 t == code || t.contains(code) || (code.length >= 6 && t.contains(code.take(6))) || (t.startsWith("NG-") && t.length >= 5)
             }
             if (chip != null) {
                 clickNode(chip)
+                chipClicked = true
             }
         } catch (e: Exception) {
             e.printStackTrace()
+        }
+
+        // 2. Always tap the clipboard suggestion chip coordinate on the keyboard toolbar (x=50%, y=62.6%)
+        if (!chipClicked) {
+            tapCoordinate(screenW * 0.50f, screenH * 0.626f)
         }
     }
 
