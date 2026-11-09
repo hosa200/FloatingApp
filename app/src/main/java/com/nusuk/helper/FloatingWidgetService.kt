@@ -347,12 +347,7 @@ class FloatingWidgetService : Service() {
 
                 // Set text directly into input node or fallback coordinate (x=50%, y=66.7%)
                 service.setInputText(code, screenW * 0.50f, screenH * 0.667f)
-                delay(500)
-
-                // Dismiss keyboard and unfocus so the button is completely visible
-                service.dismissKeyboard()
-                service.tapCoordinate(screenW * 0.50f, screenH * 0.20f)
-                delay(500)
+                delay(700)
 
                 // Click "تحقق من الرمز" button (at x=50%, y=79.2%)
                 val activateBtn = service.findTextNodes().find {
@@ -363,6 +358,8 @@ class FloatingWidgetService : Service() {
                     service.clickNode(activateBtn)
                 }
                 // ALWAYS also dispatch physical tap at the exact center of the button (y=79.2%)
+                service.tapCoordinate(screenW * 0.50f, screenH * 0.792f)
+                delay(250)
                 service.tapCoordinate(screenW * 0.50f, screenH * 0.792f)
                 delay(2600)
 
