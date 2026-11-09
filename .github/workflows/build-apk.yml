@@ -20,15 +20,16 @@ jobs:
         distribution: 'temurin'
         cache: 'gradle'
 
-    - name: Setup Gradle 8.5 Wrapper
+    - name: Install Gradle 8.5 (Fast CDN)
       run: |
-        gradle wrapper --gradle-version 8.5 --distribution-type bin
-        chmod +x gradlew
+        curl -sSL --retry 5 --retry-connrefused -o /tmp/gradle-8.5-bin.zip https://downloads.gradle-dn.com/distributions/gradle-8.5-bin.zip || \
+        curl -sSL --retry 5 --retry-connrefused -o /tmp/gradle-8.5-bin.zip https://mirrors.cloud.tencent.com/gradle/gradle-8.5-bin.zip
+        sudo unzip -q -o /tmp/gradle-8.5-bin.zip -d /opt
+        echo "/opt/gradle-8.5/bin" >> $GITHUB_PATH
 
     - name: Build Debug APK
-      run: ./gradlew assembleDebug --stacktrace --no-daemon
-      env:
-        GRADLE_OPTS: "-Dorg.gradle.internal.http.socketTimeout=60000 -Dorg.gradle.internal.http.connectionTimeout=60000"
+      run: |
+        gradle assembleDebug --stacktrace --no-daemon
 
     - name: Upload Debug APK Artifact
       uses: actions/upload-artifact@v4
