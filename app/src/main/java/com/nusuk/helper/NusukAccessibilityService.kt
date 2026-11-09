@@ -83,6 +83,39 @@ class NusukAccessibilityService : AccessibilityService() {
         }
     }
 
+    fun setInputText(code: String, fallbackX: Float, fallbackY: Float) {
+        val root = rootInActiveWindow
+        val args = android.os.Bundle().apply {
+            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, code)
+        }
+
+        val nodes = findTextNodes()
+        val target = nodes.find {
+            it.isEditable ||
+            (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O && (it.hintText?.toString()?.contains("رمز") == true || it.hintText?.toString()?.contains("أدخل") == true)) ||
+            it.contentDescription?.toString()?.contains("رمز") == true ||
+            it.text?.toString()?.contains("رمز") == true ||
+            it.text?.toString()?.contains("أدخل") == true ||
+            it.className?.toString()?.contains("EditText") == true
+        }
+
+        if (target != null) {
+            clickNode(target)
+            try { Thread.sleep(250) } catch (e: Exception) {}
+            target.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+            target.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+            return
+        }
+
+        tapCoordinate(fallbackX, fallbackY)
+        try { Thread.sleep(350) } catch (e: Exception) {}
+        val focused = findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: root?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+        if (focused != null) {
+            focused.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+            focused.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+        }
+    }
+
     fun findTextNodes(): List<AccessibilityNodeInfo> {
         val root = rootInActiveWindow ?: return emptyList()
         val result = mutableListOf<AccessibilityNodeInfo>()

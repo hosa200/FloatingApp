@@ -321,29 +321,8 @@ class FloatingWidgetService : Service() {
                 // Ensure keyboard is hidden
                 service.hideSoftKeyboard()
 
-                val refillNodes = service.findTextNodes()
-                val inputNode = refillNodes.find {
-                    it.isEditable ||
-                    it.className?.toString()?.contains("EditText") == true ||
-                    it.text?.toString()?.contains("رمز") == true ||
-                    it.text?.toString()?.contains("أدخل") == true
-                }
-
-                if (inputNode != null) {
-                    val arguments = Bundle().apply {
-                        putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, code)
-                    }
-                    val setTextSuccess = inputNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
-                    if (!setTextSuccess) {
-                        service.clickNode(inputNode)
-                        delay(400)
-                        inputNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
-                        inputNode.performAction(AccessibilityNodeInfo.ACTION_PASTE)
-                    }
-                } else {
-                    service.tapCoordinate(screenW * 0.50f, screenH * 0.58f)
-                    delay(300)
-                }
+                // Set text directly into input node or focused box via Accessibility
+                service.setInputText(code, screenW * 0.50f, screenH * 0.58f)
                 delay(400)
 
                 // Scroll down the screen (Swiping natively closes the keyboard and exposes "تحقق من الرمز")
