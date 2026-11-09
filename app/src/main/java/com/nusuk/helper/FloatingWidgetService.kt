@@ -174,20 +174,20 @@ class FloatingWidgetService : Service() {
                         continue
                     }
 
-                    // 1b. Guard: If on Keys screen and not currently refilling, return to "مسابقاتنا" tab
+                    // 1b. Guard: If on Keys screen and not currently refilling, return to "العب" tab
                     val isOnKeysScreen = allTexts.any {
-                        it.contains("أدخل رمز") || it.contains("مفاتيح اليوم") || it.contains("تفعيل مفتاح جديد")
+                        it.contains("أدخل الرمز") || it.contains("أدخل رمز") || it.contains("مفاتيح اليوم") || it.contains("تفعيل مفتاح جديد") || it.contains("مفتاح كل يوم")
                     }
                     if (isOnKeysScreen) {
-                        withContext(Dispatchers.Main) { tvStatus.text = "العودة إلى مسابقاتنا..." }
+                        withContext(Dispatchers.Main) { tvStatus.text = "العودة إلى اللعب..." }
                         val playTab = nodes.find {
                             val t = service.getNodeText(it)
-                            t.contains("مسابقاتنا") || t.contains("المسابقات")
+                            t.contains("العب") || t.contains("مسابقاتنا") || t.contains("المسابقات")
                         }
                         if (playTab != null) {
                             service.clickNode(playTab)
                         } else {
-                            service.tapCoordinate(screenW * 0.75f, screenH * 0.95f)
+                            service.tapCoordinate(screenW * 0.90f, screenH * 0.92f)
                         }
                         delay(1500)
                         continue
@@ -324,16 +324,16 @@ class FloatingWidgetService : Service() {
         val screenH = dm.heightPixels.toFloat()
 
         try {
-            // 1. Switch to "مفاتيحك" tab (Tab 3 at x=55%, y=95%)
+            // 1. Switch to "المفاتيح" tab (Tab 3 at center: x=50%, y=92%)
             val currentNodes = service.findTextNodes()
             val keysTab = currentNodes.find {
                 val t = service.getNodeText(it)
-                t.contains("مفاتيحك") || t.contains("مفاتيح")
+                t.contains("المفاتيح") || t.contains("مفاتيحك") || t.contains("مفاتيح")
             }
             if (keysTab != null) {
                 service.clickNode(keysTab)
             } else {
-                service.tapCoordinate(screenW * 0.55f, screenH * 0.95f)
+                service.tapCoordinate(screenW * 0.50f, screenH * 0.92f)
             }
             delay(1500)
 
@@ -345,27 +345,25 @@ class FloatingWidgetService : Service() {
                 val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                 clipboard.setPrimaryClip(ClipData.newPlainText("code", code))
 
-                // Ensure keyboard is closed
-                service.hideSoftKeyboard()
-
-                // Set text directly into input node or fallback coordinate (x=50%, y=66%)
-                service.setInputText(code, screenW * 0.50f, screenH * 0.66f)
+                // Set text directly into input node or fallback coordinate (x=50%, y=66.7%)
+                service.setInputText(code, screenW * 0.50f, screenH * 0.667f)
                 delay(500)
 
-                // Hide soft keyboard so it doesn't cover the button below
-                service.hideSoftKeyboard()
-                delay(400)
+                // Dismiss keyboard and unfocus so the button is completely visible
+                service.dismissKeyboard()
+                service.tapCoordinate(screenW * 0.50f, screenH * 0.20f)
+                delay(500)
 
-                // Click "تحقق من الرمز" button (at y=73%)
+                // Click "تحقق من الرمز" button (at x=50%, y=79.2%)
                 val activateBtn = service.findTextNodes().find {
                     val t = service.getNodeText(it)
                     t.contains("تحقق من الرمز") || (t.contains("تحقق") && !t.contains("إجابتك")) || t.contains("تفعيل")
                 }
                 if (activateBtn != null) {
                     service.clickNode(activateBtn)
-                } else {
-                    service.tapCoordinate(screenW * 0.50f, screenH * 0.73f)
                 }
+                // ALWAYS also dispatch physical tap at the exact center of the button (y=79.2%)
+                service.tapCoordinate(screenW * 0.50f, screenH * 0.792f)
                 delay(2600)
 
                 // Dismiss success popup if any ("مبارك!", "تم إضافة مفتاح", "إغلاق", "متابعة")
@@ -381,16 +379,16 @@ class FloatingWidgetService : Service() {
                 delay(800)
             }
 
-            // 2. Switch back to "مسابقاتنا" tab (Tab 4 at x=75%, y=95%)
-            tvStatus.text = "تم الشحن! العودة للمسابقات..."
+            // 2. Switch back to "العب" tab (Tab 1 at far right: x=90%, y=92%)
+            tvStatus.text = "تم الشحن! العودة للعب..."
             val playTab = service.findTextNodes().find {
                 val t = service.getNodeText(it)
-                t.contains("مسابقاتنا") || t.contains("المسابقات")
+                t.contains("العب") || t.contains("مسابقاتنا") || t.contains("المسابقات")
             }
             if (playTab != null) {
                 service.clickNode(playTab)
             } else {
-                service.tapCoordinate(screenW * 0.75f, screenH * 0.95f)
+                service.tapCoordinate(screenW * 0.90f, screenH * 0.92f)
             }
             delay(1500)
         } finally {

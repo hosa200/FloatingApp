@@ -83,9 +83,29 @@ class NusukAccessibilityService : AccessibilityService() {
         }
     }
 
+    fun isKeyboardShowing(): Boolean {
+        val wins = windows ?: return false
+        return wins.any { it.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+    }
+
+    fun dismissKeyboard() {
+        hideSoftKeyboard()
+        if (isKeyboardShowing()) {
+            performGlobalAction(GLOBAL_ACTION_BACK)
+            try { Thread.sleep(300) } catch (e: Exception) {}
+        }
+    }
+
     fun setInputText(code: String, fallbackX: Float, fallbackY: Float) {
         val args = android.os.Bundle().apply {
             putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, code)
+        }
+        val emptyArgs = android.os.Bundle().apply {
+            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, "")
+        }
+        val selectAllArgs = android.os.Bundle().apply {
+            putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, 0)
+            putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, 1000)
         }
 
         val nodes = findTextNodes()
@@ -109,23 +129,24 @@ class NusukAccessibilityService : AccessibilityService() {
                 inputX = rect.exactCenterX()
                 inputY = rect.exactCenterY()
             }
-            clickNode(target)
-            target.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
-            target.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
-            target.performAction(AccessibilityNodeInfo.ACTION_PASTE)
-        } else {
-            tapCoordinate(inputX, inputY)
         }
 
-        try { Thread.sleep(300) } catch (e: Exception) {}
+        // Tap the input field directly to gain focus
+        tapCoordinate(inputX, inputY)
+        try { Thread.sleep(350) } catch (e: Exception) {}
 
-        val focused = findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
-        if (focused != null) {
-            focused.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
-            focused.performAction(AccessibilityNodeInfo.ACTION_PASTE)
-        } else if (target != null) {
-            target.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
-            target.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+        val inputNode = target ?: findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+
+        if (inputNode != null) {
+            // Select all & wipe existing text to prevent code concatenation
+            inputNode.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, selectAllArgs)
+            inputNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, emptyArgs)
+            try { Thread.sleep(120) } catch (e: Exception) {}
+
+            val setOk = inputNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+            if (!setOk) {
+                inputNode.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+            }
         }
     }
 
@@ -167,19 +188,23 @@ class NusukAccessibilityService : AccessibilityService() {
     }
 
     fun clickNode(node: AccessibilityNodeInfo): Boolean {
-        if (node.isClickable) {
-            return node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-        }
-        var parent = node.parent
-        while (parent != null) {
-            if (parent.isClickable) {
-                return parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            }
-            parent = parent.parent
-        }
         val rect = Rect()
         node.getBoundsInScreen(rect)
-        tapCoordinate(rect.exactCenterX(), rect.exactCenterY())
+        if (rect.width() > 0 && rect.height() > 0) {
+            tapCoordinate(rect.exactCenterX(), rect.exactCenterY())
+        }
+        if (node.isClickable) {
+            node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        } else {
+            var parent = node.parent
+            while (parent != null) {
+                if (parent.isClickable) {
+                    parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                    break
+                }
+                parent = parent.parent
+            }
+        }
         return true
     }
 }
