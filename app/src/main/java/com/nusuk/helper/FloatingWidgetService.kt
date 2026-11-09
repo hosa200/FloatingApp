@@ -358,36 +358,39 @@ class FloatingWidgetService : Service() {
                 service.dismissKeyboard()
                 delay(900)
 
-                // 4. Click "تحقق من الرمز" button (at x=50%, y=79.1%)
+                // 4. Click "تحقق من الرمز" button (at x=50%, y=78.8%)
+                // IMPORTANT: Do NOT match "تفعيل" because the input box hint is "أدخل الرمز لتفعيل مفتاح جديد"!
                 val activateBtn = service.findTextNodes().find {
                     val t = service.getNodeText(it)
-                    t.contains("تحقق من الرمز") || (t.contains("تحقق") && !t.contains("إجابتك")) || t.contains("تفعيل")
+                    t.contains("تحقق من الرمز") || (t.contains("تحقق") && !t.contains("إجابتك") && !t.contains("مفتاح") && !t.contains("أدخل"))
                 }
+                service.tapCoordinate(screenW * 0.50f, screenH * 0.788f)
+                delay(350)
                 if (activateBtn != null) {
                     service.clickNode(activateBtn)
+                } else {
+                    service.tapCoordinate(screenW * 0.50f, screenH * 0.788f)
                 }
-                // ALWAYS also dispatch physical tap at the exact center of the button (y=79.1%)
-                service.tapCoordinate(screenW * 0.50f, screenH * 0.791f)
-                delay(250)
-                service.tapCoordinate(screenW * 0.50f, screenH * 0.791f)
                 delay(2600)
 
-                // Dismiss success popup if any ("مبارك!", "تم إضافة مفتاح", "إغلاق", "متابعة")
+                // 5. Dismiss result popup if any ("إغلاق", "متابعة", "حسناً")
+                // IMPORTANT: Do NOT match "تم" because static text on page has "تملك" which contains "تم"!
                 val popupBtn = service.findTextNodes().find {
                     val t = service.getNodeText(it)
-                    t.contains("إغلاق") || t.contains("متابعة") || t.contains("مبارك") || t.contains("تم")
+                    t.contains("إغلاق") || t.contains("متابعة") || t.contains("حسناً") || t.contains("حسنا")
                 }
                 if (popupBtn != null) {
                     service.clickNode(popupBtn)
+                    delay(800)
                 } else {
-                    service.tapCoordinate(screenW * 0.50f, screenH * 0.77f)
+                    delay(500)
                 }
-                delay(800)
             }
 
             // 2. Switch back to "العب" tab (Tab 1 at far right: x=90%, y=92%)
             tvStatus.text = "تم الشحن! العودة للعب..."
-            delay(300)
+            service.dismissKeyboard()
+            delay(500)
             val playTab = service.findTextNodes().find {
                 val t = service.getNodeText(it)
                 t.contains("العب") || t.contains("مسابقاتنا") || t.contains("المسابقات")
