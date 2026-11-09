@@ -143,6 +143,12 @@ class FloatingWidgetService : Service() {
         val screenW = dm.widthPixels.toFloat()
         val screenH = dm.heightPixels.toFloat()
 
+        val realDm = android.util.DisplayMetrics()
+        @Suppress("DEPRECATION")
+        windowManager.defaultDisplay.getRealMetrics(realDm)
+        val realW = realDm.widthPixels.toFloat()
+        val realH = realDm.heightPixels.toFloat()
+
         loopJob = scope.launch(Dispatchers.Default) {
             while (isActive && isPlaying) {
                 if (isRefilling) {
@@ -323,6 +329,12 @@ class FloatingWidgetService : Service() {
         val screenW = dm.widthPixels.toFloat()
         val screenH = dm.heightPixels.toFloat()
 
+        val realDm = android.util.DisplayMetrics()
+        @Suppress("DEPRECATION")
+        windowManager.defaultDisplay.getRealMetrics(realDm)
+        val realW = realDm.widthPixels.toFloat()
+        val realH = realDm.heightPixels.toFloat()
+
         try {
             // 1. Switch to "المفاتيح" tab (Tab 3 at center: x=50%, y=92%)
             val currentNodes = service.findTextNodes()
@@ -354,30 +366,27 @@ class FloatingWidgetService : Service() {
                 service.pasteFromKeyboardChip(code, screenW, screenH)
                 delay(700)
 
-                // 3. Dismiss keyboard ONCE (only if keyboard is actually showing) and wait 900ms for it to close
+                // 3. Dismiss keyboard and ensure it is completely closed
                 service.dismissKeyboard()
                 delay(900)
+                if (service.isKeyboardShowing()) {
+                    service.dismissKeyboard()
+                    delay(700)
+                }
 
-                // 4. Click "تحقق من الرمز" button (at x=50%, y=78.8%)
-                // IMPORTANT: Do NOT match "تفعيل" because the input box hint is "أدخل الرمز لتفعيل مفتاح جديد"!
-                val activateBtn = service.findTextNodes().find {
-                    val t = service.getNodeText(it)
-                    t.contains("تحقق من الرمز") || (t.contains("تحقق") && !t.contains("إجابتك") && !t.contains("مفتاح") && !t.contains("أدخل"))
-                }
-                service.tapCoordinate(screenW * 0.50f, screenH * 0.788f)
-                delay(350)
-                if (activateBtn != null) {
-                    service.clickNode(activateBtn)
-                } else {
-                    service.tapCoordinate(screenW * 0.50f, screenH * 0.788f)
-                }
+                // 4. Click "تحقق من الرمز" button using exact physical screen coordinates:
+                // Full screen (realH): y = 79.2% (849 / 1072); usable height (screenH): y = 83.1% (848.5 / 1021)
+                // IMPORTANT: Do NOT call clickNode(activateBtn) here because Flutter wraps the input box + button
+                // in a shared container whose center/ACTION_CLICK re-focuses the EditText and opens the keyboard!
+                val verifyBtnX = realW * 0.50f
+                val verifyBtnY = maxOf(realH * 0.792f, screenH * 0.831f)
+                service.tapCoordinate(verifyBtnX, verifyBtnY)
                 delay(2600)
 
                 // 5. Dismiss result popup if any ("إغلاق", "متابعة", "حسناً")
-                // IMPORTANT: Do NOT match "تم" because static text on page has "تملك" which contains "تم"!
                 val popupBtn = service.findTextNodes().find {
                     val t = service.getNodeText(it)
-                    t.contains("إغلاق") || t.contains("متابعة") || t.contains("حسناً") || t.contains("حسنا")
+                    !it.isEditable && t.length < 25 && (t.contains("إغلاق") || t.contains("متابعة") || t.contains("حسناً") || t.contains("حسنا"))
                 }
                 if (popupBtn != null) {
                     service.clickNode(popupBtn)
